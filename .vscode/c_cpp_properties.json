@@ -1,0 +1,19 @@
+{
+    "configurations": [
+        {
+            "name": "Linux",
+            "includePath": [
+                "${workspaceFolder}/**",
+                "/usr/include/**",
+                "/usr/src/linux-headers-6.12.20-amd64-desktop-rolling/include/**",  // 内核头文件核心路径
+                "/usr/lib/gcc/x86_64-linux-gnu/13/include/**"     // GCC标准库路径（版本号需匹配）
+            ],
+            "defines": [],
+            "compilerPath": "/usr/bin/gcc",
+            "cStandard": "c17",
+            "cppStandard": "gnu++17",
+            "intelliSenseMode": "linux-gcc-x64"
+        }
+    ],
+    "version": 4
+}
