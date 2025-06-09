@@ -3,8 +3,8 @@
 #include <fcntl.h>
 #include <time.h>
 #include <stdlib.h> 
-#define BUFFER_LEN 4
-#define CIRCUL_NUM 25
+#define BUFFER_LEN 8
+#define CIRCUL_NUM 10
 // 生成随机字母（大小写混合）
 void generate_random_letters(char *buf, size_t len) {
     for (size_t i = 0; i < len; i++) {
@@ -20,7 +20,6 @@ int main(){
     int fd = open("/dev/my_buffer", O_RDWR);
 	if (-1 != fd)
 	{
-        int i =CIRCUL_NUM;
         while (1)
         {
             //生成要写到设备中的数据
@@ -33,7 +32,7 @@ int main(){
                 close(fd);
                 return EXIT_FAILURE;
             }
-            printf("write ended.Has written %c %c %c %c.\n",buffer[0],buffer[1],buffer[2],buffer[3]);
+            printf("Has written %c %c %c %c %c %c %c %c.\n",buffer[0],buffer[1],buffer[2],buffer[3],buffer[4],buffer[5],buffer[6],buffer[7]);
             sleep(rand()%3);
         }
 	}

@@ -17,10 +17,10 @@
 
 // 定义缓冲区
 DEFINE_KFIFO(fifo_buffer, char, BUFFER_SIZE);
-
 // 锁的声明
-static DEFINE_SPINLOCK(io_lock);        // 保护IO操作
-static DEFINE_SPINLOCK(proc_lock);      // 保护proc数据
+static DEFINE_SPINLOCK(io_lock);
+// 等待队列
+DECLARE_WAIT_QUEUE_HEAD(wq);
 
 // 字符设备相关
 static struct cdev my_buffer_cdev;
@@ -28,11 +28,7 @@ static dev_t my_buffer_dev_t;
 static struct class *my_class;
 static struct proc_dir_entry* my_buffer_status_ptr;
 
-// 等待队列
-static wait_queue_head_t ReadyQueue;
-
-// 当前缓冲区长度
-static int current_len;
+static int current_len; // 当前缓冲区长度
 
 static int my_buffer_open(struct inode *inode, struct file *file)
 {
@@ -51,17 +47,22 @@ static ssize_t my_buffer_read(struct file *file, char __user *buf, size_t size, 
     }
     
     // 等待有足够的数据
-    wait_event_interruptible(ReadyQueue, {
-        unsigned long flags;
-        int ret;
+    while (1) {
         spin_lock_irqsave(&io_lock, flags);
-        ret = (current_len >= size);
+        if (current_len >= size) {
+            spin_unlock_irqrestore(&io_lock, flags);
+            break;
+        }
         spin_unlock_irqrestore(&io_lock, flags);
-        ret;
-    });
-    
-    if (signal_pending(current)) {
-        return -ERESTARTSYS;
+        
+        DEFINE_WAIT(wait);
+        prepare_to_wait(&wq, &wait, TASK_INTERRUPTIBLE);
+        schedule();
+        finish_wait(&wq, &wait);
+        
+        if (signal_pending(current)) {
+            return -ERESTARTSYS;
+        }
     }
     
     // 执行读操作
@@ -79,7 +80,7 @@ static ssize_t my_buffer_read(struct file *file, char __user *buf, size_t size, 
     
 out:
     spin_unlock_irqrestore(&io_lock, flags);
-    wake_up_interruptible(&ReadyQueue);
+    wake_up_interruptible(&wq);
     return ret;
 }
 
@@ -94,17 +95,22 @@ static ssize_t my_buffer_write(struct file *file, const char __user *buf, size_t
     }
     
     // 等待有足够的空间
-    wait_event_interruptible(ReadyQueue, {
-        unsigned long flags;
-        int ret;
+    while (1) {
         spin_lock_irqsave(&io_lock, flags);
-        ret = (current_len + size <= BUFFER_SIZE);
+        if (current_len + size <= BUFFER_SIZE) {
+            spin_unlock_irqrestore(&io_lock, flags);
+            break;
+        }
         spin_unlock_irqrestore(&io_lock, flags);
-        ret;
-    });
-    
-    if (signal_pending(current)) {
-        return -ERESTARTSYS;
+        
+        DEFINE_WAIT(wait);
+        prepare_to_wait(&wq, &wait, TASK_INTERRUPTIBLE);
+        schedule();
+        finish_wait(&wq, &wait);
+        
+        if (signal_pending(current)) {
+            return -ERESTARTSYS;
+        }
     }
     
     // 执行写操作
@@ -122,7 +128,7 @@ static ssize_t my_buffer_write(struct file *file, const char __user *buf, size_t
     
 out:
     spin_unlock_irqrestore(&io_lock, flags);
-    wake_up_interruptible(&ReadyQueue);
+    wake_up_interruptible(&wq);
     return ret;
 }
 
@@ -164,7 +170,7 @@ static ssize_t proc_show(struct file *file, char __user *buf, size_t count, loff
     
     // 输出等待队列中的进程信息
     len += scnprintf(kbuf + len, PAGE_SIZE - len, "Blocked Processes:\n");
-    list_for_each_entry(wq_entry, &ReadyQueue.head, entry) {
+    list_for_each_entry(wq_entry, &wq.head, entry) {
         if (wq_entry->private) {
             struct task_struct *task = (struct task_struct *)wq_entry->private;
             len += scnprintf(kbuf + len, PAGE_SIZE - len,
@@ -220,7 +226,6 @@ static int __init my_buffer_init(void)
     printk(KERN_INFO "Device created: Major=%d, Minor=%d\n",
            MAJOR(my_buffer_dev_t), MINOR(my_buffer_dev_t));
 
-    init_waitqueue_head(&ReadyQueue);
     kfifo_reset(&fifo_buffer);
 
     current_len = 0;
